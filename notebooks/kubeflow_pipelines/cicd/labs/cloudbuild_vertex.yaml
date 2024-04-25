@@ -13,23 +13,25 @@
 
 steps:
 # Build the trainer image
-- name: # TODO
-  args: # TODO
-  dir:  # TODO
-
+- name: 'gcr.io/cloud-builders/docker'
+  id: 'Build the training image'
+  args: ['build', '-t', 'us-docker.pkg.dev/$PROJECT_ID/asl-artifact-repo/trainer_image_covertype_vertex:latest','.']
+  dir:  $_PIPELINE_FOLDER/trainer_image_vertex
 
 # Push the trainer image, to make it available in the compile step
-- name: # TODO
-  args: # TODO
-  dir:  # TODO
+- name: 'gcr.io/cloud-builders/docker'
+  id: 'Push the training image to the artifact repo'
+  args: ['push', 'us-docker.pkg.dev/$PROJECT_ID/asl-artifact-repo/trainer_image_covertype_vertex:latest']
+  dir:  $_PIPELINE_FOLDER/trainer_image_vertex
 
 
 # Compile the pipeline
 - name: 'us-docker.pkg.dev/$PROJECT_ID/asl-artifact-repo/kfp-cli-vertex'
+  id: "Compile kfp yaml for pipeline"
   args:
   - '-c'
   - |
-    kfp dsl compile # TODO
+    kfp dsl compile --py pipeline.py --output covertype_kfp_pipeline.json # TODO
   env:
   - 'PIPELINE_ROOT=gs://$PROJECT_ID-kfp-artifact-store/pipeline'
   - 'PROJECT_ID=$PROJECT_ID'
@@ -42,6 +44,7 @@ steps:
 
 # Run the pipeline
 - name: 'us-docker.pkg.dev/$PROJECT_ID/asl-artifact-repo/kfp-cli-vertex'
+  id: "Run the pipeline"
   args:
   - '-c'
   - |
@@ -49,7 +52,9 @@ steps:
 
 # Push the images to Artifact Registry
 # TODO: List the images to be pushed to the project Docker registry
-images: # TODO
+images:
+    - 'us-docker.pkg.dev/$PROJECT_ID/asl-artifact-repo/trainer_image_covertype_vertex:latest'
+    # TODO
 
 
 # This is required since the pipeline run overflows the default timeout
