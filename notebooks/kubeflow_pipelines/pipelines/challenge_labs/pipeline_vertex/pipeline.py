@@ -15,10 +15,18 @@
 """Kubeflow Covertype Pipeline."""
 import os
 
+from extract_bq import extract_bq_op
 from google.cloud.aiplatform import hyperparameter_tuning as hpt
 from google_cloud_pipeline_components.types import artifact_types
 
 # TODO 2: Import a predefined componet for Batch Prediction
+from google_cloud_pipeline_components.v1.batch_predict_job import (
+    ModelBatchPredictOp,
+)
+
+# TODO 3: Import extract bq_op
+from google_cloud_pipeline_components.v1.bigquery import BigqueryQueryJobOp
+
 # TODO 3: Import a predefined componet for BigQuery query job
 from google_cloud_pipeline_components.v1.custom_job import CustomTrainingJobOp
 from google_cloud_pipeline_components.v1.endpoint import (
@@ -34,11 +42,10 @@ from google_cloud_pipeline_components.v1.model import ModelUploadOp
 from kfp import dsl
 from retrieve_best_hptune_component import retrieve_best_hptune_result
 
-# TODO 3: Import extract bq_op
-
 PIPELINE_ROOT = os.getenv("PIPELINE_ROOT")
 PROJECT_ID = os.getenv("PROJECT_ID")
 REGION = os.getenv("REGION")
+DATA_REGION = os.getenv("DATA_REGION")
 
 TRAINING_CONTAINER_IMAGE_URI = os.getenv("TRAINING_CONTAINER_IMAGE_URI")
 SERVING_CONTAINER_IMAGE_URI = os.getenv("SERVING_CONTAINER_IMAGE_URI")
@@ -65,6 +72,36 @@ TIMESTAMP = os.getenv("TIMESTAMP")
 def create_pipeline():
 
     # TODO 3: Insert Data tasks here
+    def construct_query(_mode, _split):
+        return f"CREATE OR REPLACE TABLE `{PROJECT_ID}.covertype_dataset.{_mode}` AS ( \
+        SELECT * \
+        FROM `covertype_dataset.covertype` AS cover \
+        WHERE \
+        MOD(ABS(FARM_FINGERPRINT(TO_JSON_STRING(cover))), 10) in {_split})"
+
+    bq_query_job_validation = BigqueryQueryJobOp(
+        location=DATA_REGION,
+        project=PROJECT_ID,
+        query=construct_query("validation", "(8)"),
+    )
+
+    bq_query_job_training = BigqueryQueryJobOp(
+        location=DATA_REGION,
+        project=PROJECT_ID,
+        query=construct_query("training", "(1,2,3,4)"),
+    )
+
+    bq_extract_job_validation = extract_bq_op(
+        bq_table=bq_query_job_validation.outputs["destination_table"],
+        data_location=DATA_REGION,
+        destination_uri=VALIDATION_FILE_PATH,
+    )
+
+    bq_extract_job_training = extract_bq_op(
+        bq_table=bq_query_job_training.outputs["destination_table"],
+        data_location=DATA_REGION,
+        destination_uri=TRAINING_FILE_PATH,
+    )
 
     worker_pool_specs = [
         {
@@ -109,6 +146,7 @@ def create_pipeline():
         parallel_trial_count=PARALLEL_TRIAL_COUNT,
         base_output_directory=PIPELINE_ROOT,
     )  # TODO 3: Define dependencies for preceding tasks.
+    hp_tuning_task.after(bq_extract_job_validation, bq_extract_job_training)
 
     best_retrieval_task = retrieve_best_hptune_result(
         project=PROJECT_ID,
@@ -156,3 +194,17 @@ def create_pipeline():
     )
 
     # TODO 2: Add Batch Prediction task
+    batch_predict_op = ModelBatchPredictOp(
+        job_display_name=f"{PIPELINE_NAME}-kfp-batch-predict-job",
+        project=PROJECT_ID,
+        location=REGION,
+        instances_format="bigquery",
+        predictions_format="bigquery",
+        model=model_upload_task.outputs["model"],
+        bigquery_source_input_uri=f"bq://{PROJECT_ID}.covertype_dataset.validation",
+        excluded_fields=["Cover_Type"],
+        bigquery_destination_output_uri=f"bq://{PROJECT_ID}.covertype_dataset.batch_prediction_result",
+        machine_type="n2-standard-16",  # worker_pool_specs[0]["machine_spec"]["machine_type"]
+        starting_replica_count=2,
+        max_replica_count=20,
+    )

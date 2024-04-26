@@ -1,0 +1,15 @@
+workerPoolSpecs:
+  machineSpec:
+    machineType: n1-standard-8
+  replicaCount: 1
+  pythonPackageSpec:
+    executorImageUri: us-docker.pkg.dev/vertex-ai/training/tf-cpu.2-11.py310:latest
+    packageUris: gs://qwiklabs-asl-00-61116abbd0d9/flowers/flowers_trainer-0.1.tar.gz
+    pythonModule: trainer.train
+    args:
+    - --train_data_path=gs://qwiklabs-asl-00-61116abbd0d9/flowers/data/training/*.tfrec
+    - --eval_data_path=gs://qwiklabs-asl-00-61116abbd0d9/flowers/data/validation/*.tfrec
+    - --output_dir=gs://qwiklabs-asl-00-61116abbd0d9/flowers/model_20240426101904
+    - --num_epochs=15
+    - --train_examples=15000
+    - --batch_size=32

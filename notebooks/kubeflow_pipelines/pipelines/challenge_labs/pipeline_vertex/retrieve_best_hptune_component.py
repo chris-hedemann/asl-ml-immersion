@@ -14,9 +14,8 @@
 """Lightweight component tuning function."""
 from typing import Dict, List, NamedTuple
 
-from kfp.dsl import component
-
 # TODO 1: Import output and artifact object
+from kfp.dsl import Input, Metrics, Output, component
 
 
 @component(
@@ -32,6 +31,7 @@ def retrieve_best_hptune_result(
     validation_file_path: str,
     # TODO 1: Add metrics output object.
     # Use `metrics_artifact` for the variable name.
+    metrics_artifact: Output[Metrics],
 ) -> NamedTuple(
     "Outputs",
     [
@@ -90,5 +90,9 @@ def retrieve_best_hptune_result(
         best_worker_pool_spec[0]["container_spec"]["args"].append(f"--{k}={v}")
 
     # TODO 1: Add metrics reporting for Vertex AI Experiments
+    for key, value in best_parameters.items():
+        metrics_artifact.log_metric(key, value)
+    for key, value in best_metrics.items():
+        metrics_artifact.log_metric(key, value)
 
     return best_parameters, best_metrics, best_worker_pool_spec
